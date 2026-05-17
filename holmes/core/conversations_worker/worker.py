@@ -8,6 +8,8 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
+from holmes.core.tool_calling_llm import LLMInterruptedError
+
 from starlette.requests import Request
 
 from holmes.common.env_vars import (
@@ -106,6 +108,12 @@ class ConversationWorker:
         # (claim loop + _process_conversation_safe finally block).
         self._dispatch_lock = threading.Lock()
 
+        # Maps conversation_id → threading.Event for in-flight conversations.
+        # Setting the event causes call_stream() to raise LLMInterruptedError
+        # at the next iteration boundary, giving a clean cancellation.
+        self._cancel_events: Dict[str, threading.Event] = {}
+        self._cancel_events_lock = threading.Lock()
+
         self._realtime_manager: Optional[RealtimeManager] = None
 
         # Background thread that verifies Supabase Realtime is actually
@@ -119,6 +127,51 @@ class ConversationWorker:
         # Used by the verifier to wait between retries; setting it during
         # stop() makes the thread exit promptly.
         self._realtime_verify_stop = threading.Event()
+
+    def stop_conversation(self, conversation_id: str) -> bool:
+        """
+        Signal a running or queued conversation to stop.
+
+        * If the conversation is currently running (call_stream in progress),
+          its cancel event is set, which causes LLMInterruptedError to be
+          raised at the next iteration boundary.
+        * If the conversation is still queued (not yet dispatched to the
+          executor), it is removed from the local queue.
+
+        Returns True if the conversation was found locally (running or queued),
+        False if it was not known to this worker instance.
+        """
+        found = False
+
+        # Signal cancel event for any in-flight conversation.
+        with self._cancel_events_lock:
+            event = self._cancel_events.get(conversation_id)
+            if event is not None:
+                event.set()
+                found = True
+
+        # Also remove from the local queue if it hasn't been dispatched yet.
+        with self._queued_lock:
+            for task in list(self._queued_tasks):
+                if task.conversation_id == conversation_id:
+                    try:
+                        self._queued_tasks.remove(task)
+                    except ValueError:
+                        pass
+                    found = True
+                    break
+
+        if found:
+            logging.info(
+                "stop_conversation: signalled cancellation for conversation %s",
+                conversation_id,
+            )
+        else:
+            logging.info(
+                "stop_conversation: conversation %s not found on this worker",
+                conversation_id,
+            )
+        return found
 
     def start(self) -> None:
         if not self.dal.enabled:
@@ -558,6 +611,14 @@ class ConversationWorker:
                 task.conversation_id,
                 e,
             )
+        except LLMInterruptedError:
+            # The conversation was stopped via the stop_conversation API.
+            # The DB status was already set to 'stopped' by the API caller;
+            # no further DB update is needed here.
+            logging.info(
+                "Conversation %s was stopped by user request",
+                task.conversation_id,
+            )
         except Exception as e:
             logging.exception(
                 "Error processing conversation %s: %s",
@@ -734,6 +795,13 @@ class ConversationWorker:
 
         storage = tool_result_storage()
         tool_results_dir = storage.__enter__()
+
+        # Create a per-conversation cancel event and register it so that
+        # stop_conversation() can signal it from another thread.
+        cancel_event = threading.Event()
+        with self._cancel_events_lock:
+            self._cancel_events[task.conversation_id] = cancel_event
+
         try:
             ai = self.config.create_toolcalling_llm(
                 dal=self.dal,
@@ -795,6 +863,7 @@ class ConversationWorker:
                     response_format=chat_request.response_format,
                     request_context=request_context,
                     trace_span=trace_span,
+                    cancel_event=cancel_event,
                 )
 
                 terminal = publisher.consume(stream)
@@ -831,6 +900,8 @@ class ConversationWorker:
                 "Conversation %s was reassigned: %s", task.conversation_id, e
             )
         finally:
+            with self._cancel_events_lock:
+                self._cancel_events.pop(task.conversation_id, None)
             storage.__exit__(None, None, None)
 
     def _inject_frontend_tools(
