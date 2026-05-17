@@ -128,51 +128,6 @@ class ConversationWorker:
         # stop() makes the thread exit promptly.
         self._realtime_verify_stop = threading.Event()
 
-    def stop_conversation(self, conversation_id: str) -> bool:
-        """
-        Signal a running or queued conversation to stop.
-
-        * If the conversation is currently running (call_stream in progress),
-          its cancel event is set, which causes LLMInterruptedError to be
-          raised at the next iteration boundary.
-        * If the conversation is still queued (not yet dispatched to the
-          executor), it is removed from the local queue.
-
-        Returns True if the conversation was found locally (running or queued),
-        False if it was not known to this worker instance.
-        """
-        found = False
-
-        # Signal cancel event for any in-flight conversation.
-        with self._cancel_events_lock:
-            event = self._cancel_events.get(conversation_id)
-            if event is not None:
-                event.set()
-                found = True
-
-        # Also remove from the local queue if it hasn't been dispatched yet.
-        with self._queued_lock:
-            for task in list(self._queued_tasks):
-                if task.conversation_id == conversation_id:
-                    try:
-                        self._queued_tasks.remove(task)
-                    except ValueError:
-                        pass
-                    found = True
-                    break
-
-        if found:
-            logging.info(
-                "stop_conversation: signalled cancellation for conversation %s",
-                conversation_id,
-            )
-        else:
-            logging.info(
-                "stop_conversation: conversation %s not found on this worker",
-                conversation_id,
-            )
-        return found
-
     def start(self) -> None:
         if not self.dal.enabled:
             logging.info(

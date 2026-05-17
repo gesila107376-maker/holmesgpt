@@ -278,8 +278,3 @@ class ChatResponse(BaseModel):
     follow_up_actions: Optional[List[FollowUpAction]] = []
     pending_approvals: Optional[List[PendingToolApproval]] = None
     metadata: Optional[Dict[Any, Any]] = None
-
-
-class StopConversationResponse(BaseModel):
-    success: bool
-    message: str
