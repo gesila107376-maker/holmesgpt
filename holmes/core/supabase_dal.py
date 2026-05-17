@@ -1116,33 +1116,6 @@ class SupabaseDal:
             )
             return False
 
-    def stop_conversation(self, conversation_id: str) -> bool:
-        """
-        Stop a queued or running conversation by setting its status to ``stopped``.
-
-        Unlike ``update_conversation_status``, this does not require the assignee
-        or request_sequence — any caller with the conversation_id can stop it.
-        If the conversation is not in a stoppable state (already completed/failed/stopped),
-        the RPC returns false and this method returns False.
-        """
-        if not self.enabled:
-            return False
-
-        try:
-            res = self.client.rpc(
-                "stop_conversation",
-                {
-                    "_account_id": self.account_id,
-                    "_conversation_id": conversation_id,
-                },
-            ).execute()
-            return bool(res.data)
-        except Exception:
-            logging.exception(
-                "Supabase error while stopping conversation", exc_info=True
-            )
-            return False
-
     def get_conversation_events(
         self,
         conversation_id: str,
