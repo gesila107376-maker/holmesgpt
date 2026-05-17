@@ -205,15 +205,6 @@ class SupabaseFixture:
         )
         future.result(timeout=5)
 
-    def stop_conversation(self, conversation_id: str) -> None:
-        self.client.rpc(
-            "stop_conversation",
-            {
-                "_conversation_id": conversation_id,
-                "_account_id": self.account_id,
-            },
-        ).execute()
-
     def get_conversation(self, conversation_id: str) -> Dict[str, Any]:
         return (
             self.client.table("Conversations")
@@ -276,7 +267,7 @@ class SupabaseFixture:
             conv = self.get_conversation(conversation_id)
             if (
                 conv["request_sequence"] == request_sequence
-                and conv["status"] in ("completed", "failed", "stopped")
+                and conv["status"] in ("completed", "failed")
             ):
                 return conv
             time.sleep(1.0)
@@ -354,18 +345,8 @@ def supabase_fx(request) -> SupabaseFixture:
             )
         return
 
-    # Best-effort teardown: stop any still-active conversations and delete them
+    # Best-effort teardown: delete conversations created by this fixture.
     for cid in fx._created_conversations:
-        try:
-            conv = fx.get_conversation(cid)
-            if conv["status"] in ("pending", "queued", "running"):
-                fx.stop_conversation(cid)
-        except Exception:
-            logging.warning(
-                "Failed to stop conversation %s during teardown",
-                cid,
-                exc_info=True,
-            )
         try:
             client.table("ConversationEvents").delete().eq(
                 "conversation_id", cid

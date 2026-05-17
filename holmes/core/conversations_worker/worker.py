@@ -435,9 +435,9 @@ class ConversationWorker:
                     task = self._queued_tasks.popleft()
 
                 # Transition from queued → running in the DB. The RPC validates
-                # that the assignee and request_sequence still match — if
-                # stop_conversation or retry_conversation bumped the sequence
-                # while the task was queued, this raises ConversationReassignedError.
+                # that the assignee and request_sequence still match. If another
+                # request bumped the sequence while the task was queued, this
+                # raises ConversationReassignedError.
                 try:
                     ok = self.dal.update_conversation_status(
                         conversation_id=task.conversation_id,
@@ -549,7 +549,7 @@ class ConversationWorker:
             self._process_conversation(task)
         except ConversationReassignedError as e:
             # Another worker claimed this conversation or the initiator bumped
-            # request_sequence (e.g. stop_conversation) while we were working.
+            # request_sequence while we were working.
             # The DB already reflects the new state — do NOT call
             # update_conversation_status, which would either fail (status guard)
             # or race with the new owner.

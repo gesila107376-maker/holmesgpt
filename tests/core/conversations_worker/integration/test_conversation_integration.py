@@ -386,40 +386,7 @@ class TestToolApproval:
 
 
 # ---------------------------------------------------------------------------
-# 4. Stop conversation (ConversationReassignedError)
-# ---------------------------------------------------------------------------
-class TestStopConversation:
-
-    def test_stop_mid_stream(self, supabase_fx: SupabaseFixture):
-        """Stopping a running conversation should leave it in 'stopped' status.
-
-        Holmes should detect the MISMATCH and exit without overwriting the status.
-        """
-        # Ask something that takes a while (tool calls)
-        conv = supabase_fx.create_conversation(
-            ask=(
-                "List all elasticsearch indices and then for each one separately "
-                "query its document count. For each index write a 3-paragraph "
-                "analysis of what you found."
-            ),
-            title="integ: stop-test",
-        )
-        cid = conv["conversation_id"]
-
-        # Wait for Holmes to start running
-        supabase_fx.wait_for_status(cid, {"running"}, timeout=30)
-
-        # Stop immediately
-        supabase_fx.stop_conversation(cid)
-
-        # Wait for the conversation to reach stopped status
-        final = supabase_fx.wait_for_status(cid, {"stopped"}, timeout=30)
-        assert final["status"] == "stopped"
-        assert final["assignee"] is None
-
-
-# ---------------------------------------------------------------------------
-# 5. Error event posting
+# 4. Error event posting
 # ---------------------------------------------------------------------------
 class TestErrorEvents:
 

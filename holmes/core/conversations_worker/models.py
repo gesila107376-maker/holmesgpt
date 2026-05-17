@@ -10,12 +10,11 @@ class ConversationStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-    STOPPED = "stopped"
 
     @classmethod
     def updatable_values(cls) -> tuple:
         """Statuses accepted by ``update_conversation_status``."""
-        return (cls.QUEUED.value, cls.RUNNING.value, cls.COMPLETED.value, cls.FAILED.value, cls.STOPPED.value)
+        return (cls.QUEUED.value, cls.RUNNING.value, cls.COMPLETED.value, cls.FAILED.value)
 
 
 class ConversationTask(BaseModel):
