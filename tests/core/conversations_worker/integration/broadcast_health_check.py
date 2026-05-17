@@ -165,6 +165,16 @@ def wait_for_claim(conversation_id: str, timeout: float = 150) -> float:
 def cleanup():
     for cid in created_ids:
         try:
+            conv = client.table("Conversations").select("status").eq(
+                "conversation_id", cid
+            ).single().execute().data
+            if conv["status"] in ("pending", "queued", "running"):
+                client.rpc("stop_conversation", {
+                    "_conversation_id": cid, "_account_id": account_id
+                }).execute()
+        except Exception:
+            pass
+        try:
             client.table("ConversationEvents").delete().eq("conversation_id", cid).execute()
             client.table("Conversations").delete().eq("conversation_id", cid).execute()
         except Exception:

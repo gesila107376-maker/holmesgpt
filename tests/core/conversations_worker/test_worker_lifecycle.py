@@ -171,7 +171,7 @@ def test_dispatch_queued_skips_if_transition_fails():
 
 def test_dispatch_queued_handles_mismatch_during_transition():
     """If the queued→running transition raises ConversationReassignedError
-    (e.g. request_sequence changed while queued), the task
+    (e.g. stop_conversation bumped request_sequence while queued), the task
     must be skipped — not submitted to executor."""
     w = _bare_worker()
     w.dal.update_conversation_status.side_effect = ConversationReassignedError(

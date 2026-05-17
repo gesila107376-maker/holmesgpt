@@ -199,7 +199,9 @@ class ChatRequestBaseModel(BaseModel):
     request_id: Optional[str] = Field(
         default=None,
         description=(
-            "Client-supplied opaque identifier for this request, used in stream logs and tracing."
+            "Client-supplied opaque identifier for this request. "
+            "When stream=true, pass this ID to POST /api/chat/stop/{request_id} "
+            "to cancel the in-progress stream."
         ),
     )
     enable_tool_approval: Optional[bool] = (
@@ -276,3 +278,8 @@ class ChatResponse(BaseModel):
     follow_up_actions: Optional[List[FollowUpAction]] = []
     pending_approvals: Optional[List[PendingToolApproval]] = None
     metadata: Optional[Dict[Any, Any]] = None
+
+
+class StopConversationResponse(BaseModel):
+    success: bool
+    message: str
