@@ -8,8 +8,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Union
 
-from holmes.core.tool_calling_llm import LLMInterruptedError
-
 from starlette.requests import Request
 
 from holmes.common.env_vars import (
@@ -560,10 +558,6 @@ class ConversationWorker:
                 task.conversation_id,
                 e,
             )
-        except LLMInterruptedError:
-            # The DB status was already set to 'stopped' by the stop_conversation
-            # RPC; no further DB update is needed here.
-            logging.info("Conversation %s stopped by user", task.conversation_id)
         except Exception as e:
             logging.exception(
                 "Error processing conversation %s: %s",
