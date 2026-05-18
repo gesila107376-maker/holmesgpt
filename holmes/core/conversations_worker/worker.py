@@ -108,12 +108,6 @@ class ConversationWorker:
         # (claim loop + _process_conversation_safe finally block).
         self._dispatch_lock = threading.Lock()
 
-        # Maps conversation_id → threading.Event for in-flight conversations.
-        # Setting the event causes call_stream() to raise LLMInterruptedError
-        # at the next iteration boundary, giving a clean cancellation.
-        self._cancel_events: Dict[str, threading.Event] = {}
-        self._cancel_events_lock = threading.Lock()
-
         self._realtime_manager: Optional[RealtimeManager] = None
 
         # Background thread that verifies Supabase Realtime is actually
@@ -567,13 +561,9 @@ class ConversationWorker:
                 e,
             )
         except LLMInterruptedError:
-            # The conversation was stopped via the stop_conversation API.
-            # The DB status was already set to 'stopped' by the API caller;
-            # no further DB update is needed here.
-            logging.info(
-                "Conversation %s was stopped by user request",
-                task.conversation_id,
-            )
+            # The DB status was already set to 'stopped' by the stop_conversation
+            # RPC; no further DB update is needed here.
+            logging.info("Conversation %s stopped by user", task.conversation_id)
         except Exception as e:
             logging.exception(
                 "Error processing conversation %s: %s",
@@ -751,11 +741,7 @@ class ConversationWorker:
         storage = tool_result_storage()
         tool_results_dir = storage.__enter__()
 
-        # Create a per-conversation cancel event and register it so that
-        # stop_conversation() can signal it from another thread.
         cancel_event = threading.Event()
-        with self._cancel_events_lock:
-            self._cancel_events[task.conversation_id] = cancel_event
 
         try:
             ai = self.config.create_toolcalling_llm(
@@ -855,8 +841,6 @@ class ConversationWorker:
                 "Conversation %s was reassigned: %s", task.conversation_id, e
             )
         finally:
-            with self._cancel_events_lock:
-                self._cancel_events.pop(task.conversation_id, None)
             storage.__exit__(None, None, None)
 
     def _inject_frontend_tools(
