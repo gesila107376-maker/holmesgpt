@@ -417,7 +417,6 @@ def _stream_with_trace_cleanup(
     stream_generator,
     req_info,
     trace_span,
-    request_id: Optional[str] = None,
     cancel_event: Optional[threading.Event] = None,
 ):
     """Wrap a stream generator with both storage cleanup and OTel span lifecycle.
@@ -428,15 +427,15 @@ def _stream_with_trace_cleanup(
     Sets cancel_event on exit so the disconnect watcher task exits promptly.
     """
     _start = time.monotonic()
-    logging.info("Stream request start: %s (request_id=%s)", req_info, request_id)
+    logging.info("Stream request start: %s", req_info)
     try:
         yield from stream_generator
     finally:
         elapsed = time.monotonic() - _start
         was_cancelled = cancel_event is not None and cancel_event.is_set()
         logging.info(
-            "Stream request end: %s (request_id=%s, elapsed=%.2fs, cancelled=%s)",
-            req_info, request_id, elapsed, was_cancelled,
+            "Stream request end: %s (elapsed=%.2fs, cancelled=%s)",
+            req_info, elapsed, was_cancelled,
         )
         trace_span.end()
         # Signal disconnect watcher (if any) that the stream has ended.
@@ -572,13 +571,12 @@ def chat(chat_request: ChatRequest, http_request: Request):
 
             # Create a cancel event so the disconnect watcher can interrupt the LLM loop.
             stream_cancel_event = threading.Event()
-            stream_request_id = chat_request.request_id
 
             # Start a background async task that detects HTTP client disconnect
             # and sets stream_cancel_event, preventing anyio thread starvation
             # when callers repeatedly open and close streaming connections.
             _schedule_disconnect_watcher(
-                http_request, stream_cancel_event, label=stream_request_id or req_info
+                http_request, stream_cancel_event, label=req_info
             )
 
             stream = stream_chat_formatter(
@@ -601,7 +599,6 @@ def chat(chat_request: ChatRequest, http_request: Request):
                     stream,
                     req_info,
                     trace_span,
-                    request_id=stream_request_id,
                     cancel_event=stream_cancel_event,
                 ),
                 media_type="text/event-stream",
